@@ -1,12 +1,16 @@
 # Gitall
 
 gitall is a command to effect all git subrepositories below the current working directory
-NOTE: This project does not seek to reproduce all functionality from all git commands
-        Scope is currently limited to the functions listed below
 
-Usage: gitall <command> [<args>] [options]
+NOTE: This project does not seek to reproduce all functionality from all git commands
+      Scope is currently limited to the functions listed below
+
+Usage: 
+
+        gitall <command> [<args>] [options]
 
 commands
+
     -C, checkout [--NAME=<BRANCH_NAME>] [options]
         Switch all git subrepositories onto <BRANCH_NAME> 
         The branch must exist for all repositories unless create new branch is specified
