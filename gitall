@@ -1,0 +1,360 @@
+#!/bin/bash
+
+# FUNCTIONS
+# -------------------------------------------------------------------------------------------------
+
+execute_command()
+{
+    local command=$1
+    local options=$2
+    if [[ "$command" == "checkout" ]]; then
+        local name=$3
+    fi
+
+
+    for location in "${gitlist[@]}"
+    do
+        cd "$location"
+        gotStatus=$(git status)
+        if [[ "$command" == "status" ]]; then
+            if [[ "$options" == *"q"* ]] && { [[ "$gotStatus" != *"Untracked"* ]] && [[ "$gotStatus" != *"Changes"* ]] ; }; then
+                cd $startDir
+                continue
+            fi
+        fi
+        if [[ "$command" == "checkout" ]]; then
+            if [[ "$optionString" != *"f"* ]] && { [[ "$gotStatus" == *"Untracked"* ]] || [[ "$gotStatus" == *"Changes"* ]] ; }; then
+                cd $startDir
+                continue
+            fi
+        fi
+        if [[ "$options" == *"m"* ]] && { [[ "$gotStatus" != *"main"* ]] && [[ "$gotStatus" != *"master"* ]] ; }; then
+            cd $startDir
+            continue
+        fi
+        if [[ "$options" == *"n"* ]] && { [[ "$gotStatus" == *"main"* ]] || [[ "$gotStatus" == *"master"* ]] ; }; then
+            cd $startDir
+            continue
+        fi
+
+        printf "\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n"
+        pwd
+        if [[ "$command" == "checkout" ]]; then
+            git "$command" "$name"
+        else
+            git "$command"
+        fi
+        cd $startDir
+    done
+
+}
+
+print_help()
+{
+    echo "
+    gitall is a command to effect all git subrepositories below the current working directory
+    NOTE: This project does not seek to reproduce all functionality from all git commands
+          Scope is currently limited to the functions listed below
+
+    Usage: gitall <command> [<args>] [options]
+
+    commands
+        -C, checkout [--NAME=<BRANCH_NAME>] [options]
+            Switch all git subrepositories onto <BRANCH_NAME> 
+            The branch must exist for all repositories unless create new branch is specified
+                -N=<BRANCH_NAME>, --NAME=<BRANCH_NAME> specifies the name of the to checkout
+            options:
+                -b, --branch        Create and checkout a new branch of name specified by --NAME= (WIP)
+                -f, --force         Forces checkout, without checking for changes (WIP)
+                -m, --main          checks out only subrepositories that start on main/master branch
+                -n, --noMain        checks out only subrepositories that do not start on main/master branch
+
+        -F, fetch [options]
+            Fetch all git subrepositories onto their current branch(es)/tag(s)
+            options:
+                -m, --main          Fetches only subrepositories on main/master branch
+                -n, --noMain        Fetches only subrepositories not on main/master branch
+
+        -P, pull [options]
+            Pull all git subrepositories on their current branch(es)/tag(s)
+            options:
+                -m, --main          Pulls only subrepositories on main/master branch
+                -n, --noMain        Pulls only subrepositories not on main/master branch
+
+        -S, status [options]
+            Report the status of all git subrepositories on their current branch(es)/tag(s)
+            options:
+                -q, --quiet         Reports only repositories with changes present
+                -m, --main          Reports only subrepositories on main/master branch
+                -n, --noMain        Reports only subrepositories not on main/master branch
+
+        -T, tag [<newTagName>][options] (WIP)
+            Create a new tag and pushes all git subrepositories
+            options:
+                -m, --main          Pulls only subrepositories on main/master branch
+                -n, --noMain        Pulls only subrepositories not on main/master branch
+                
+
+    "
+}
+
+# SETUP
+# -------------------------------------------------------------------------------------------------
+# Color Keys
+# Black        0;30     Dark Gray     1;30
+# Red          0;31     Light Red     1;31
+# Green        0;32     Light Green   1;32
+# Brown/Orange 0;33     Yellow        1;33
+# Blue         0;34     Light Blue    1;34
+# Purple       0;35     Light Purple  1;35
+# Cyan         0;36     Light Cyan    1;36
+# Light Gray   0;37     White         1;37
+
+RED='\033[0;31m'
+ORANGE='\033[0;33m'
+WHITE='\033[1;37m'
+NC='\033[0m' #No Color
+
+startDir=$(pwd)
+if [ ! -d "./.git" ]; then
+    printf "${ORANGE}WARN:${NC} Working Directory ${startDir} is not a git project\n"
+fi
+
+# verify .git is present in submodules
+submoduleCount=$(find . -maxdepth 2 -type d -name ".git" | wc -l)
+if  [[ ${#submoduleCount[@]} -gt 0 ]] && [[ ${submoduleCount[0]} -eq 0 ]]; then
+    printf "${RED}ERROR:${NC} Unable to locate git submodules (fatal)\n"
+    exit 1
+fi
+# read in list of all git repos
+IFS=$'\n'
+gitlist=($(ls -d */.git | sed "s/\/\.git$//"))
+unset IFS
+
+printf "${WHITE}Info:${NC} Working from $startDir with ${#gitlist[@]} submodule(s) present\n"
+
+optionString=" "
+
+
+
+# RUN
+# -------------------------------------------------------------------------------------------------
+
+case "$1" in
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    -H|-\?|-h|--help)
+        #show_help
+        print_help
+        exit
+        ;;
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    -S|status)
+        shift
+        while true; do
+            case "$1" in
+                -q|--quiet)
+                    #set quiet flag
+                    optionString+="q"
+                    shift
+                    ;;
+                -n|--noMain)
+                    #show status only of branches not on main/master
+                    if [[ "$optionString" == *"m"* ]]; then
+                        printf "${ORANGE}WARN:${NC} Unable to set option: noMain (ignored)\n"
+                    else
+                        optionString+="n"
+                    fi
+                    shift
+                    ;;
+                -m|--main)
+                    #show status only of branches on main/master
+                    if [[ "$optionString" == *"n"* ]]; then
+                        printf "${ORANGE}WARN:${NC} Unable to set option: main (ignored)\n"
+                    else
+                        optionString+="m"
+                    fi
+                    shift
+                    ;;
+                --)
+                    shift
+                    break
+                    ;;
+                -?*)
+                    printf "${ORANGE}WARN:${NC} Unknown option (ignored): $1\n"
+                    shift
+                    ;;
+                *)
+                    break #Default case: No more options, end loop
+            esac
+        done
+        #
+        # show status
+        #
+        execute_command "status" "$optionString"
+        exit
+        ;;
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    -C|checkout)
+        printf "${WHITE}Info:${NC} This command is still WIP!\n"
+        shift
+        while true; do
+            case "$1" in
+        #         -b|--branch)
+        #             #create new branch    
+        #             shift
+        #             ;;
+                -N=?*|--NAME=?*)
+                    branchName=${1#*=} #deletes everything up to "=" and assigns remainder as variable
+                    shift
+                    ;;
+        #         -f|--force)
+        #             #set force checkout flag
+        #             shift
+        #             ;;
+        #         -o|--origin)
+        #             #set checkout master/main flag
+        #             shift
+        #             ;;
+                -m|--main)
+                    if [[ "$optionString" == *"n"* ]]; then
+                        printf "${ORANGE}WARN:${NC} Unable to set option: main (ignored)\n"
+                    else
+                        optionString+="m"
+                    fi
+                    shift
+                    ;;
+                -n|--noMain)
+                    if [[ "$optionString" == *"m"* ]]; then
+                        printf "${ORANGE}WARN:${NC} Unable to set option: noMain (ignored)\n"
+                    else
+                        optionString+="n"
+                    fi
+                    shift
+                    ;;
+                --)
+                    shift
+                    break
+                    ;;
+                -?*)
+                    printf "${RED}ERROR:${NC} Unknown option: $1\n"
+                    shift
+                    ;;
+                *)
+                    break #Default case: No more options, end loop
+            esac
+        done
+        #
+        # Preform Checkout
+        #
+        if [ -z "${branchName}" ]; then
+            printf "${RED}ERROR:${NC} No branch name set (fatal)\n"
+            exit 1
+        fi
+        execute_command "checkout" "$optionString" "$branchName"
+        exit
+        ;;
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    -F|fetch)
+        shift
+        while true; do
+            case "$1" in
+                -n|--noMain)
+                    #show status only of branches not on main/master
+                    if [[ "$optionString" == *"m"* ]]; then
+                        printf "${ORANGE}WARN:${NC} Unable to set option: noMain (ignored)\n"
+                    else
+                        optionString+="n"
+                    fi
+                    shift
+                    ;;
+                -m|--main)
+                    #show status only of branches on main/master
+                    if [[ "$optionString" == *"n"* ]]; then
+                        printf "${ORANGE}WARN:${NC} Unable to set option: main (ignored)\n"
+                    else
+                        optionString+="m"
+                    fi
+                    shift
+                    ;;
+                --)
+                    shift
+                    break
+                    ;;
+                -?*)
+                    printf "${ORANGE}WARN:${NC} Unknown option (ignored): $1\n"
+                    ;;
+                *)
+                    break #Default case: No more options, end loop
+            esac
+        done
+        #
+        # Preform Fetch
+        #
+        execute_command "fetch" "$optionString"
+        exit
+        ;;
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    -P|pull)
+        shift
+        while true; do
+            case "$1" in
+                -n|--noMain)
+                    #show status only of branches not on main/master
+                    if [[ "$optionString" == *"m"* ]]; then
+                        printf "${ORANGE}WARN:${NC} Unable to set option: noMain (ignored)\n"
+                    else
+                        optionString+="n"
+                    fi
+                    shift
+                    ;;
+                -m|--main)
+                    #show status only of branches on main/master
+                    if [[ "$optionString" == *"n"* ]]; then
+                        printf "${ORANGE}WARN:${NC} Unable to set option: main (ignored)\n"
+                    else
+                        optionString+="m"
+                    fi
+                    shift
+                    ;;
+                --)
+                    shift
+                    break
+                    ;;
+                -?*)
+                    printf "${RED}ERROR:${NC} Unknown option: $1\n"
+                    shift
+                    ;;
+                *)
+                    break #Default case: No more options, end loop
+            esac
+        done
+        #
+        # Preform Pull
+        #
+        execute_command "pull" "$optionString"
+        exit
+        ;;
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    -T|tag)
+        printf "${WHITE}Info:${NC} This command is still WIP\n"
+        # shift
+        #
+        # Preform tag
+        #
+        exit
+        ;;
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# Default cases
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    --)
+        shift
+        exit
+        ;;
+    -?*)
+        printf "${RED}ERROR:${NC} Unknown Command (fatal): $1\n"
+        exit
+        ;;
+    *)
+        printf "${RED}ERROR:${NC} Unknown Command (fatal): $1\n"
+        exit #Default case: No options
+esac
